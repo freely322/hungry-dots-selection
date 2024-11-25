@@ -1,0 +1,214 @@
+const maxMS = 0.5
+const minMS = 0.1
+const maxHitbox = 35
+const minHitbox = 3
+const hitbox = 30
+const numberOfDots = 500
+const refreshRate = 5
+const healthLossPerSpeed = 0.04
+const healthLossPerMove = 0.05
+const health = 100
+const healthGainPerKill = 15
+const msGainPerKill = 0.5
+
+
+
+let countDots = 0 
+
+const randomInRange = (min, max) => Math.random() * (max - min) + min
+
+const randomInRangeExcept = (min, max, ignore, arr) => {
+	const result = Math.round(randomInRange(min, max))
+  if (arr[result] === ignore) {
+  	return randomInRangeExcept(min, max, ignore, arr);
+  }
+  return result
+};
+
+const figuresMap = {};
+const targetsMap = {};
+const followsMap = {};
+
+const noTargetsMap = {};
+const moveMap = {};
+const figuresToKillMap = {};
+
+const field = document.getElementById('field');
+const chart = document.getElementById('chart');
+
+const stringToColour = (value) => {
+	const str = `${value}`
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  let colour = '#';
+  for (let i = 0; i < 3; i++) {
+    let value = (hash >> (i * 8)) & 0xFF;
+    colour += ('00' + value.toString(16)).substr(-2);
+  }
+  return colour;
+}
+
+const create = setInterval(() => {
+	if (Object.values(figuresMap).length >= numberOfDots || countDots >= numberOfDots) {
+  	clearInterval(create);
+    return
+  }
+	const id = Math.ceil(Math.random() * Date.now())
+  const x = Number(randomInRange(-400, 400).toFixed(0));
+  const y = Number(randomInRange(-400, 400).toFixed(0));
+  const color = stringToColour(id);
+  const hitbox = randomInRange(minHitbox, maxHitbox);
+  const turnRate = 2;
+  const ms = maxMS * (101 - (hitbox * 100 / maxHitbox)) / 100;
+ 	noTargetsMap[id] = true
+	figuresMap[id] = {
+  	x,
+    y,
+    ms,
+    color,
+  	hitbox,
+    turnRate,
+    score: 0,
+    health: health,
+  };
+  const ell = document.createElement("div");
+  ell.id = id;
+  ell.style = `transition: 1s width, 1s height; transform: translate(${x}px, ${y}px); position: absolute; background-color: ${color}; width: ${hitbox}px; height: ${hitbox}px; border-radius: 50%`
+  field.appendChild(ell)
+  countDots = countDots + 1;
+}, refreshRate * 100)
+
+const targets = setInterval(() => {
+	const figuresArr = Object.keys(figuresMap);
+  const noTargetArr = Object.keys(noTargetsMap);
+  const targetsArr = Object.keys(targetsMap);
+  if (figuresArr.length >= 2) {
+    noTargetArr.map(figureId => {
+      const follows = figuresArr[randomInRangeExcept(0, figuresArr.length - 1, figureId, figuresArr)];
+      if (!figuresToKillMap[follows] || !figuresToKillMap[figureId]) {
+        targetsMap[figureId] = follows;
+        if (followsMap[follows]) {
+          followsMap[follows].push(figureId)
+        } else {
+          followsMap[follows] = [figureId]
+        }
+        delete noTargetsMap[figureId]
+      }
+    })
+  }
+  targetsArr.map(figureId => {
+    moveMap[figureId] = true;
+  })
+}, refreshRate)
+
+const move = setInterval(() => {
+  const toMoveArr = Object.keys(moveMap)
+ 	toMoveArr.map(figureId => {
+  	const current = figuresMap[figureId];
+    const target = figuresMap[targetsMap[figureId]];
+    if (!figuresToKillMap[current] || !figuresToKillMap[target]) {
+      if (current && target) {
+        let newX = current.x;
+        let newY = current.y;
+        let kill = true;
+        const deltaX = target.x - current.x;
+        const deltaY = target.y - current.y;
+        if (Math.abs(deltaX) > (current.hitbox / 2 + target.hitbox / 2) || Math.abs(deltaY) > (current.hitbox / 2 + target.hitbox / 2)) {
+        	current.health = current.health - healthLossPerMove - (current.ms * healthLossPerSpeed);
+        	const angle = Math.atan2(deltaY, deltaX);
+          newX = current.x + (current.ms * Math.cos( angle )) * Math.PI / current.turnRate;
+					newY = current.y + (current.ms * Math.sin( angle )) * Math.PI / current.turnRate;
+          kill = false
+        }
+      	if (current.health <= 0) {
+          	figuresToKillMap[figureId] = true
+          }
+        current.x = newX;
+        current.y = newY;
+        const ell = document.getElementById(figureId);
+        ell.style.transform = `translate(${newX}px, ${newY}px)`
+        if (kill || current.ms > Math.sqrt(Math.pow(deltaX, 2) + Math.pow(deltaY, 2))) {
+          current.score = current.score + 1;
+          current.health = current.health + healthGainPerKill;
+          current.ms = current.ms + msGainPerKill;
+          current.hitbox = current.hitbox + target.hitbox * 0.2;
+          ell.style.width = `${current.hitbox}px`;
+          ell.style.height = `${current.hitbox}px`;
+          figuresToKillMap[targetsMap[figureId]] = true
+        }
+        delete moveMap[figureId]
+      }
+    }
+  })
+}, refreshRate)
+
+const kill = setInterval(() => {
+	const toKillArr = Object.keys(figuresToKillMap);
+ 	toKillArr.map(figureId => {
+  	delete figuresToKillMap[figureId]
+    delete moveMap[figureId]
+    delete figuresMap[figureId]
+    delete targetsMap[figureId]
+  	if (followsMap[figureId]) {
+      followsMap[figureId].map(item => {
+        delete targetsMap[item]
+        noTargetsMap[item] = true;
+      })
+      delete followsMap[figureId]
+    }
+    const ell = document.getElementById(figureId);
+    ell.remove();
+  })
+}, refreshRate)
+
+	let globalSpeedAvg = 0;
+  let globalSpeedSum = 0;
+  let globalCountSpeed = 0;
+
+const chartSpeed = setInterval(() => {
+	let localSpeedAvg = 0;
+  let localSpeedSum = 0;
+  let localCountSpeed = 0;
+	const container = document.createElement('div')
+	const value = document.createElement('div');
+	const globalValue = document.createElement('div');
+  const figuresArr = Object.values(figuresMap);
+  figuresArr.map(figure => {
+  	globalCountSpeed = globalCountSpeed + 1;
+    localCountSpeed = localCountSpeed + 1;
+  	globalSpeedSum = globalSpeedSum + figure.ms;
+    localSpeedSum = localSpeedSum + figure.ms;
+  })
+  localSpeedAvg = localSpeedSum / localCountSpeed;
+  globalSpeedAvg = globalSpeedSum / globalCountSpeed;
+  value.style = `height: ${localSpeedAvg * 100 / maxMS}px; background-color: red; opacity: 0.25; width: 1px; position: absolute, left: 0; bottom: 0`
+  globalValue.style = `height: ${globalSpeedAvg * 100 / maxMS}px; background-color: yellow; opacity: 0.25; width: 1px; position: absolute, left: 0; bottom: 0`
+  container.style = 'height: 100px, width: 100%'
+  container.appendChild(value)
+  container.appendChild(globalValue)
+	chart.appendChild(container);
+}, refreshRate)
+
+const log = setInterval(() => {
+	console.log(figuresMap)
+  console.log(targetsMap)
+  console.log(followsMap)
+  console.log(moveMap)
+}, 5000)
+
+setTimeout(() => {
+	clearInterval(create)
+  clearInterval(move)
+  clearInterval(chartScore)
+  clearInterval(chartSpeed)
+}, 99999999)
+
+//clearInterval(chartScore)
+//clearInterval(chartSpeed)
+//clearInterval(create)
+//clearInterval(move)
+//clearInterval(targets)
+//clearInterval(kill)
+clearInterval(log)
